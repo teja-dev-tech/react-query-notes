@@ -99,3 +99,222 @@ const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuer
 </button>
 
 ```
+## **React Intersection Observer**
+
+To implement infinite scrolling using the **React Intersection Observer** package, you can follow these steps:
+
+### 1. **Install the Intersection Observer Package**
+
+First, install the `react-intersection-observer` package:
+
+```bash
+npm install react-intersection-observer
+
+```
+
+### 2. **Set Up the Infinite Scroll Component**
+
+Here’s an example of how to use the package with `useInfiniteQuery` from React Query:
+
+```jsx
+import React from 'react';
+import { useInfiniteQuery } from 'react-query';
+import { useInView } from 'react-intersection-observer';
+
+const fetchPosts = async ({ pageParam = 1 }) => {
+  const response = await fetch(`/api/posts?page=${pageParam}`);
+  return response.json();
+};
+
+const InfiniteScrollPosts = () => {
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery('posts', fetchPosts, {
+    getNextPageParam: (lastPage, pages) => {
+      return lastPage.hasMore ? pages.length + 1 : undefined;
+    },
+  });
+
+  // Intersection Observer hook
+  const { ref: loadMoreRef, inView } = useInView({
+    threshold: 1,
+    triggerOnce: false, // Set to true if you want to load only once
+  });
+
+  React.useEffect(() => {
+    if (inView && hasNextPage) {
+      fetchNextPage();
+    }
+  }, [inView, fetchNextPage, hasNextPage]);
+
+  return (
+    <div>
+      {data?.pages.map((page, i) => (
+        <React.Fragment key={i}>
+          {page.posts.map((post) => (
+            <div key={post.id} className="post">
+              {post.title}
+            </div>
+          ))}
+        </React.Fragment>
+      ))}
+
+      <div ref={loadMoreRef} style={{ height: '20px' }}>
+        {isFetchingNextPage ? 'Loading more...' : hasNextPage ? 'Load more' : 'No more posts'}
+      </div>
+    </div>
+  );
+};
+
+export default InfiniteScrollPosts;
+
+```
+
+### 3. **Explanation:**
+
+- The `useInView` hook from `react-intersection-observer` provides a `ref` that you attach to the load-more element.
+- When the load-more element comes into view, the `inView` variable becomes `true`, triggering the `fetchNextPage` function.
+- The `threshold` option determines how much of the element needs to be visible before the callback is triggered. You can adjust it as needed.
+
+## Mutation
+
+Here’s a simple example of using `useMutation` in React Query for submitting data (like creating a new post):
+
+```tsx
+import React from 'react';
+import { useMutation, useQueryClient } from 'react-query';
+
+const createPost = async (newPost) => {
+  const response = await fetch('/api/posts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(newPost),
+  });
+  return response.json();
+};
+
+const CreatePost = () => {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation(createPost, {
+    onSuccess: (newPost) => {
+      // Update the posts cache with the new post
+      queryClient.setQueryData('posts', (oldData) => [...oldData, newPost]);
+    },
+  });
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const newPost = { title: form.title.value };
+
+    mutation.mutate(newPost); // Call the mutation
+    form.reset();
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input type="text" name="title" placeholder="Post Title" required />
+      <button type="submit">Create Post</button>
+      {mutation.isLoading && <p>Adding post...</p>}
+      {mutation.isError && <p>Error: {mutation.error.message}</p>}
+      {mutation.isSuccess && <p>Post added!</p>}
+    </form>
+  );
+};
+
+export default CreatePost;
+
+```
+
+---
+
+**Optimistic Updates**
+
+As the name indicates, it implies updating the state before performing a mutation under the assumption that nothing can go wrong.
+
+It is typically done to give an impression that your app is blazing fast.
+
+With that said, you do have to cater to scenarios where the mutation can, in fact, error out.
+
+Managing optimistic updates is typically not-so-straightforward, but React Query, on the other hand, does simplify it to a very good extent.
+
+### Example Code:
+
+```jsx
+import React from 'react';
+import { useMutation, useQueryClient } from 'react-query';
+
+const createPost = async (newPost) => {
+  const response = await fetch('/api/posts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(newPost),
+  });
+  return response.json();
+};
+
+const CreatePost = () => {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation(createPost, {
+    // Optimistic update example
+    onMutate: async (newPost) => {
+      await queryClient.cancelQueries('posts');
+      const previousPosts = queryClient.getQueryData('posts');
+      queryClient.setQueryData('posts', (old) => [...old, newPost]);
+      return { previousPosts };
+    },
+    onError: (err, newPost, context) => {
+      queryClient.setQueryData('posts', context.previousPosts);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries('posts');
+    },
+  });
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const newPost = { title: form.title.value };
+
+    mutation.mutate(newPost); // Call the mutation
+    form.reset();
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input type="text" name="title" placeholder="Post Title" required />
+      <button type="submit">Create Post</button>
+      {mutation.isLoading && <p>Adding post...</p>}
+      {mutation.isError && <p>Error: {mutation.error.message}</p>}
+      {mutation.isSuccess && <p>Post added!</p>}
+    </form>
+  );
+};
+
+export default CreatePost;
+
+```
+
+### Key Points:
+
+- **`useMutation`** is used for creating, updating, or deleting data.
+- The `mutation` object provides states like `isLoading`, `isError`, and `isSuccess` to handle UI feedback.
+- You can perform optimistic updates and rollback on errors using the `onMutate` and `onError` callbacks.
+
+## Why Cancel Queries
+
+When you perform an optimistic update, you want to prevent any in-flight queries from invalidating your optimistic update. Here's why:
+
+1. Prevent Race Conditions:
+If there's an ongoing fetch for the "posts" query, and you add a new post using the mutate function, there's a chance that the ongoing fetch might complete after your optimistic update, overriding the optimistic data with the stale data from the server.
+2. Ensure Consistent State:
+By cancelling the ongoing queries, you ensure that no stale or incomplete data is accidentally re-applied to the UI after the optimistic update. This keeps the UI in a consistent state.
